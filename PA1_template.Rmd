@@ -1,20 +1,116 @@
 # Reproducible Research: Peer Assessment 1
 
 
-## Loading and preprocessing the data
+## 1. Loading and preprocessing the data
+
+### 1.1. Loading the data
+```{r 1_1}
+require(data.table)
+require(ggplot2)
+require(scales)
+setwd("~/Git/RepData_PeerAssessment1/")
+unzip("./activity.zip", "activity.csv")
+dtData <- fread("activity.csv")
+```
+
+### 1.2. Process/transform the data
+```{r 1_2}
+dtData$date <- as.POSIXct(strptime(dtData$date, format = "%Y-%m-%d"))
+dtData$weekend <- as.factor(weekdays(dtData$date) %in% c("Sunday","Saturday"))
+
+dtPerDay <- dtData[,list(sum = sum(steps),mean = mean(steps)), by = date]
+dtPerDay <- cbind(dtPerDay,tapply(dtData$steps, dtData$date, median))
+setnames(dtPerDay, c("V2"), c("median"))
+```
+
+## 2. What is mean total number of steps taken per day?
+
+### 2.1. Figure: Total number of steps taken each day
+```{r 2_1}
+ggplot(dtPerDay, aes(x=dtPerDay$sum)) +
+    geom_histogram(binwidth=500) +
+    xlab("steps per day") +
+    ylab("count of days") +
+    ggtitle("Total number of steps taken each day") +
+    scale_x_continuous(breaks=seq(0,max(dtPerDay$sum, na.rm=TRUE), by=2000))
+```
+
+### 2.2. Table: Mean and median for total number or steps taken per day 
+```{r 2_2}
+dtPerDay[,list(date=date,mean=mean,meadian=median)]
+```
 
 
+## 3. What is the average daily activity pattern?
 
-## What is mean total number of steps taken per day?
+### 3.1. Daily pattern
+```{r 3_1}
+dtPerInterval <- dtData[, list(sum = sum(steps,na.rm=TRUE), mean = mean(steps,na.rm=TRUE)), by = interval]
+ggplot(dtPerInterval, aes(x=dtPerInterval$interval, y=dtPerInterval$mean)) +
+  geom_line() +
+  xlab("Time of day") +
+  ylab("Average number of steps") +
+  ggtitle("Number of steps taken, averaged across all days")
+```
 
+### 3.2. Maximum activity
+```{r 3_2}
+maxInterval <- dtPerInterval[max(dtPerInterval$mean)==dtPerInterval$mean,interval]
+```
+Interval: `r maxInterval` contains maximum number of steps on average across all measured days. 
 
+## 4. Imputing missing values
 
-## What is the average daily activity pattern?
+### 4.1. Report missing values
+```{r 4_1}
+misValCount <- sum(!complete.cases(dtData))
+```
+There are `r misValCount` records with missing values in the dataset.
 
+### 4.2. Strategy for filling the missing values
+We will use mean of the mean across all days for missing values.
+```{r 4_2}
+dtMerged <- merge(dtData[is.na(dtData$steps),],dtPerInterval, by="interval")
+```
 
+### 4.3. Filling the missing values in new data.frame
+```{r 4_3}
+dtFilled <- dtData
+dtFilled[is.na(dtFilled$steps)]$steps <- as.integer(dtMerged$mean)
+dtFilledPerDay <- dtFilled[,list(sum = sum(steps),mean = mean(steps)), by = date]
+dtFilledPerDay <- cbind(dtFilledPerDay,tapply(dtFilled$steps, dtFilled$date, median))
+setnames(dtFilledPerDay, c("date","sum","mean","V2"), c("date","sum","mean","median"))
+```
 
-## Imputing missing values
+### 4.4. Visualize with filled values
+```{r 4_4_1}
+ggplot(dtFilledPerDay, aes(x=dtFilledPerDay$sum)) +
+    geom_histogram(binwidth=500) +
+    xlab("steps per day") +
+    ylab("count of days") +
+    ggtitle("Total number of steps taken each day") +
+    scale_x_continuous(breaks=seq(0,max(dtFilledPerDay$sum, na.rm=TRUE), by=2000))
+```
 
+```{r 4_4_2}
+dtFilledPerDay[,list(date=date,mean=mean,meadian=median)]
+```
+**Observation:**  
+- Filling means across all days for the missing values slightly changes the histogram, we see there are overall more days shown in the plot.
+- The difference is also visible in the table of *MEANS* and *MEDIANS*, while there were missing values in the secion No. 2, we can see values with artificialy inserted data. Especially notable is diffrence in *MEDIANS*.
 
+## 5.Are there differences in activity patterns between weekdays and weekends? 
 
-## Are there differences in activity patterns between weekdays and weekends?
+### 5.1 Set weekend factor levels
+```{r 5_1}
+levels(dtFilled$weekend) <- c("WEEKDAY", "WEEKEND")
+```
+
+### 5.2 Visualize weekends vs weekdays
+```{r 5_2}
+ggplot(dtFilled, aes(x=dtFilled$interval, y=dtFilled$steps)) +
+  stat_summary(fun.y=mean, geom="line") +
+  xlab("Time of day") +
+  ylab("Average number of steps") +
+  ggtitle("Number of steps taken, averaged across all days") + facet_grid(weekend ~ .)
+```
